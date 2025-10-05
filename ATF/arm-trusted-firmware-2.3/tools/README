@@ -1,0 +1,7 @@
+The static library
+	tools/openssl
+	tools/libssl.a
+	tools/libcrypto.a
+is form openssl-OpenSSL_1_0_1-stable
+: ./config
+: make build_libs

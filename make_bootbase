@@ -1,0 +1,320 @@
+SERVER = $(shell uname -m)
+# MAKE_VSERION = $(shell make --v | awk 'NR==1 { print $3 }')
+# MAKE_3.81 = $(shell [$(MAKE_VSERION) -gt 3.80 ] && echo true)
+# ifeq ($(MAKE_3.81), true)
+# ATF_MAKE = make
+# else
+ATF_MAKE = $(ATF_DIR)/make
+# endif
+
+ifneq ($(TCSUPPORT_OPENWRT),)
+#LAMZ_DIR=$(TOOLS_DIR)
+#else
+TOOLS_DIR=$(shell pwd)/../tools
+endif
+
+ifeq ($(TCSUPPORT_OPENWRT),)
+	ifeq ($(TC_BUILD_RELEASECODE),)
+		export TCSUPPORT_BB_FIX_UNOPEN=0
+	else
+		export TCSUPPORT_BB_FIX_UNOPEN=1
+	endif
+else
+	ifeq ($(TCSUPPORT_OPENWRT_RELEASECODE),)
+		export TCSUPPORT_BB_FIX_UNOPEN=0
+	else
+		export TCSUPPORT_BB_FIX_UNOPEN=1
+	endif
+endif
+
+ifeq ($(strip $(TC_BUILD_RELEASECODE) $(RELEASEBSP)),)
+	UNOPEN_IMG_PATH=$(BOOTROM_UNOPEN_IMG_DIR)/$(TCPLATFORM)
+else
+	UNOPEN_IMG_PATH=$(RELEASE_BSP_DIR)/$(TCPLATFORM)/bootloader/unopen_img
+endif
+	export UNOPEN_IMG_PATH
+
+DELETE_SUBDIRS = $(ATF_DIR)/arm-trusted-firmware-2.1/bl1 $(ATF_DIR)/arm-trusted-firmware-2.1/bl2 $(ATF_DIR)/arm-trusted-firmware-2.1/bl31 \
+		$(ATF_DIR)/arm-trusted-firmware-2.1/drivers $(ATF_DIR)/arm-trusted-firmware-2.1/common $(ATF_DIR)/arm-trusted-firmware-2.1/plat/ecnt \
+		$(ATF_DIR)/arm-trusted-firmware-2.3/bl1 $(ATF_DIR)/arm-trusted-firmware-2.3/bl2 $(ATF_DIR)/arm-trusted-firmware-2.3/bl31 \
+		$(ATF_DIR)/arm-trusted-firmware-2.3/drivers $(ATF_DIR)/arm-trusted-firmware-2.3/common $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt
+
+
+uboot_cp:
+ifeq ($(shell test $(TCSUPPORT_UBOOT_MAJOR_VERSION) -ge 2023; echo $$?),0)
+	@echo "copy Airoha U-Boot targets."
+	cp -frpR $(UBOOT_DIR)/u-boot-airoha/* $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/
+endif
+
+uboot: uboot_clean atf uboot_cp
+	@echo $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)
+ifeq ($(shell test $(TCSUPPORT_UBOOT_MAJOR_VERSION) -ge 2023; echo $$?),0)
+	@cp $(PROFILE_DIR)/mi.conf  $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/
+	$(MAKE) -C $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION) $(UBOOT_CONFIG)_evb_defconfig
+	$(MAKE) -C $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION) $(TC_PARALLEL_BUILD_PARAM_UBOOT) CROSS_COMPILE=$(CROSS_COMPILE)
+	$(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/tools/mkenvimage -s 16384 -p 0 -o $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/env.bin $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/mi.conf
+else
+ifeq ($(strip $(RDKB_BUILD)),)
+	@cp $(KERNEL_EXT_SPI_NAND_DIR)/spi_nand_flash.c  $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/
+	@cp $(KERNEL_EXT_SPI_NAND_DIR)/spi_nand_flash_table.c  $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/
+	@cp $(KERNEL_EXT_SPI_NAND_DIR)/spi_controller.c  $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/
+	@cp $(KERNEL_EXT_SPI_NAND_DIR)/spi_ecc.c  $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/
+	@cp $(KERNEL_EXT_SPI_NAND_DIR)/spi_nfi.c  $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/
+endif
+	@cp $(PROFILE_DIR)/uboot/spi_nand_flash.c  $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/
+	@cp $(PROFILE_DIR)/mi.conf  $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/
+ifneq ($(TCSUPPORT_PARALLEL_NAND),)
+ifeq ($(strip $(RDKB_BUILD)),)
+	@cp $(KERNEL_EXT_SPI_NAND_DIR)/parallel_nand_flash.c $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/
+	@cp $(KERNEL_EXT_SPI_NAND_DIR)/parallel_nand_flash_table.c $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/
+endif
+endif
+	-cp -f $(KERNEL_ECNT_ARCH_ARM_ECNT_DIR)/arm_v7_pmu.S $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/common/ecnt/
+	-cp -f $(KERNEL_ECNT_ARCH_ARM_ECNT_DIR)/ecnt_avs.c $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/common/ecnt/
+	-cp -f $(KERNEL_ECNT_ARCH_ARM_ECNT_DIR)/ecnt_scu_phy.c $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/common/ecnt/
+	-cp -f $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/ecnt_cpufreq.c $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/common/ecnt/
+	-cp -f $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/include/ecnt_cpufreq.h $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/common/ecnt/
+	-cp -f $(KERNEL_ECNT_ARCH_ARM_INC_DIR)/asm/tc3162/arm_v7_pmu.h $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/include/ecnt/
+	make -C $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION) $(UBOOT_CONFIG)_evb_config
+	make -C $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION) $(TC_PARALLEL_BUILD_PARAM_UBOOT) all
+endif
+	cp $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/tools/mkimage $(TOOLS_UBOOT_DIR)
+
+uboot_clean:
+ifeq ($(shell test $(TCSUPPORT_UBOOT_MAJOR_VERSION) -ge 2023; echo $$?),0)
+	make -C $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION) $(TC_PARALLEL_BUILD_PARAM_UBOOT) distclean
+else
+	make -C $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION) $(TC_PARALLEL_BUILD_PARAM_UBOOT) distclean
+	-rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/common/ecnt/arm_v7_pmu.S
+	-rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/common/ecnt/ecnt_avs.c
+	-rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/common/ecnt/ecnt_scu_phy.c
+	-rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/common/ecnt/ecnt_cpufreq.c
+	-rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/common/ecnt/ecnt_cpufreq.h
+	-rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/include/ecnt/arm_v7_pmu.h
+ifeq ($(strip $(RDKB_BUILD)),)
+	@rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/spi_nand_flash.c
+	@rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/spi_nand_flash_table.c
+	@rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/spi_controller.c
+	@rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/spi_ecc.c
+	@rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/drivers/misc/ecnt/flash/spi_nfi.c
+ifneq ($(TCSUPPORT_PARALLEL_NAND),)
+	@rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/parallel_nand_flash.c
+	@rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/parallel_nand_flash_table.c
+endif
+endif
+endif
+	@rm -f $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/mi.conf
+
+atf: atf_clean
+ifneq ($(TCSUPPORT_BB_FIX_UNOPEN),0)
+	@echo aft: do nothing
+ifneq ($(TCSUPPORT_ATF_RELEASE),)
+ifeq ($(strip $(SERVER)),x86_64)
+	@echo $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/common/drivers/ddr_cal $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/common/drivers/
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/common/drivers/efuse $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/common/drivers/
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/ecnt_scu.c $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/en7523/ecnt_scu.c
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/include/ecnt_scu.h $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/en7523/include/ecnt_scu.h
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/ecnt_cpufreq.c $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/en7523/ecnt_cpufreq.c
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/include/ecnt_cpufreq.h $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/en7523/include/ecnt_cpufreq.h
+ifneq ($(TCSUPPORT_OPTEE),)
+	$(ATF_MAKE) -C $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION) ARCH=aarch64 SPD=opteed PLAT=$(TCSOCNAME) bl31 TCSUPPORT_OPTEE=1
+else
+	$(ATF_MAKE) -C $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION) ARCH=aarch64 PLAT=$(TCSOCNAME) bl31
+endif
+else
+	@echo "32bit server can not build atf"
+endif
+endif	
+else
+ifeq ($(strip $(SERVER)),x86_64)
+	@echo $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/common/drivers/ddr_cal $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/common/drivers/
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/common/drivers/efuse $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/common/drivers/
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/ecnt_scu.c $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/en7523/ecnt_scu.c
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/include/ecnt_scu.h $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/en7523/include/ecnt_scu.h
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/ecnt_cpufreq.c $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/en7523/ecnt_cpufreq.c
+	-cp -f -r $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/include/ecnt_cpufreq.h $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION)/plat/ecnt/en7523/include/ecnt_cpufreq.h
+ifneq ($(TCSUPPORT_OPTEE),)
+	$(ATF_MAKE) -C $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION) ARCH=aarch64 SPD=opteed PLAT=$(TCSOCNAME) bl31 TCSUPPORT_OPTEE=1
+else
+	$(ATF_MAKE) -C $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION) ARCH=aarch64 PLAT=$(TCSOCNAME) bl31
+endif
+else
+	@echo "32bit server can not build atf"
+endif
+endif
+
+atf_clean:
+ifneq ($(TCSUPPORT_BB_FIX_UNOPEN),0)
+	@echo atf: do nothing
+ifneq ($(TCSUPPORT_ATF_RELEASE),)
+ifeq ($(strip $(SERVER)),x86_64)
+	$(ATF_MAKE) -C $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION) ARCH=aarch64 PLAT=$(TCSOCNAME) distclean
+else
+	@echo "32bit server can not clean atf"
+endif
+endif	
+else
+ifeq ($(strip $(SERVER)),x86_64)
+	$(ATF_MAKE) -C $(ATF_DIR)/$(TCSUPPORT_ATF_VERSION) ARCH=aarch64 PLAT=$(TCSOCNAME) distclean
+else
+	@echo "32bit server can not clean atf"
+endif
+endif
+
+distclean:
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) distclean
+ifeq ($(TCSUPPORT_BB_FIX_UNOPEN),0)
+	make -C $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/common/drivers/NPU/md32rv-sdk software_clean NPU_INIC_CLIENT_SUPPORT=1 NPU_CODE_IN_SRAM=1
+endif
+
+bl1:
+ifneq ($(TCSUPPORT_BB_FIX_UNOPEN),0)
+	@echo bl1: do nothing
+else
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/common/drivers/NPU/md32rv-sdk software NPU_INIC_CLIENT_SUPPORT=1 NPU_CODE_IN_SRAM=1
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 AARCH32_INSTRUCTION_SET=A32 bl1
+endif
+
+bl2:
+ifneq ($(TCSUPPORT_BL2_OPTIMIZATION),)
+ifeq ($(TCSUPPORT_BB_FIX_UNOPEN),0)
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/common/drivers/NPU/md32rv-sdk software NPU_INIC_CLIENT_SUPPORT=1 NPU_CODE_IN_SRAM=1
+	-cp -f $(KERNEL_ECNT_ARCH_ARM_ECNT_DIR)/ecnt_avs.c $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/
+	-cp -f $(KERNEL_ECNT_ARCH_ARM_ECNT_DIR)/ecnt_scu_phy.c $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 distclean
+
+ifneq ($(TCSUPPORT_OPTEE),)
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2 IMAGE_BL23=1\
+																		 TCSUPPORT_BL2_OPTIMIZATION=1\
+																		 TCSUPPORT_OPTEE=1														 
+else																		 
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2 IMAGE_BL23=1 TCSUPPORT_BL2_OPTIMIZATION=1
+endif
+
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 distclean
+ifneq ($(TCSUPPORT_OPTEE_SIZE),)	
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2 IMAGE_BL22=1 TCSUPPORT_OPTEE_SIZE=$(TCSUPPORT_OPTEE_SIZE)
+else
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2 IMAGE_BL22=1
+endif	
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 distclean
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2 IMAGE_BL21=1
+else
+ifneq ($(TCSUPPORT_ATF_RELEASE),)
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 distclean
+ifeq ($(strip $(RDKB_BUILD)),)
+	-cp -f $(KERNEL_ECNT_ARCH_ARM_ECNT_DIR)/ecnt_avs.c $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/
+	-cp -f $(KERNEL_ECNT_ARCH_ARM_ECNT_DIR)/ecnt_scu_phy.c $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/
+endif
+ifneq ($(TCSUPPORT_OPTEE),)
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2 IMAGE_BL23=1\
+																		 TCSUPPORT_BL2_OPTIMIZATION=1\
+																		 TCSUPPORT_OPTEE=1														 
+else																		 
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2 IMAGE_BL23=1 TCSUPPORT_BL2_OPTIMIZATION=1
+endif
+
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 distclean
+ifneq ($(TCSUPPORT_OPTEE_SIZE),)	
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2 IMAGE_BL22=1 TCSUPPORT_OPTEE_SIZE=$(TCSUPPORT_OPTEE_SIZE)
+else
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2 IMAGE_BL22=1
+endif	
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 distclean
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2 IMAGE_BL21=1
+endif	
+endif
+	make -C $(TOOLS_DIR)/flash_table	
+	$(TOOLS_DIR)/flash_table/test
+	$(TOOLS_DIR)/lzma e flash_table.bin flash_table.lzma
+	$(TOOLS_DIR)/trx/trx -z $(UNOPEN_IMG_PATH)/atf/bl21.bin $(UNOPEN_IMG_PATH)/atf/bl22.lzma $(UNOPEN_IMG_PATH)/atf/bl23.lzma flash_table.lzma $(UNOPEN_IMG_PATH)/atf/bl2.bin
+	cp $(UNOPEN_IMG_PATH)/atf/bl2.bin bl2.tmp
+	$(TOOLS_DIR)/trx/trx -x bl2.tmp bl2_crc.bin
+	mv bl2_crc.bin $(UNOPEN_IMG_PATH)/atf/bl2.bin
+	rm bl2.tmp
+	rm flash_table.bin
+	rm flash_table.lzma
+else
+ifneq ($(TCSUPPORT_BB_FIX_UNOPEN),0)
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2
+else
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/common/drivers/NPU/md32rv-sdk software NPU_INIC_CLIENT_SUPPORT=1 NPU_CODE_IN_SRAM=1
+	-cp -f $(KERNEL_ECNT_ARCH_ARM_ECNT_DIR)/ecnt_avs.c $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/
+	-cp -f $(KERNEL_ECNT_ARCH_ARM_ECNT_DIR)/ecnt_scu_phy.c $(ATF_DIR)/arm-trusted-firmware-2.3/plat/ecnt/en7523/
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 bl2
+endif
+	cp $(UNOPEN_IMG_PATH)/atf/bl2.bin bl2.tmp
+	$(TOOLS_DIR)/trx/trx -x bl2.tmp bl2_crc.bin
+	mv bl2_crc.bin $(UNOPEN_IMG_PATH)/atf/bl2.bin
+	rm bl2.tmp
+endif
+
+
+cert:
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 AARCH32_INSTRUCTION_SET=A32 ecnt_efuse
+
+key:
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 AARCH32_INSTRUCTION_SET=A32 key
+
+op-tee:
+	@echo -e "\033[43;31m Start to build OP-TEE.. \033[0m"
+	@make -C bootloader/optee_os-3.21.0 PLATFORM=airoha ARCH=arm CFG_ARM64_core=y clean all	
+
+bootbase: distclean bl1 bl2 uboot cert
+	$(TOOLS_DIR)/lzma e $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/u-boot.bin $(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/u-boot.lzma
+	$(TOOLS_DIR)/lzma e $(UNOPEN_IMG_PATH)/atf/bl31.bin $(UNOPEN_IMG_PATH)/atf/bl31.lzma
+	
+	
+ifneq ($(TCSUPPORT_OPTEE),)
+	@echo -e "\033[43;31m Start to update reserved memory and compress OP-TEE.. \033[0m"
+	@export CUSTOM="$(CUSTOM)" PROFILE="$(PROFILE)"  && python $(BOOTROM_DIR)/modify_dtsi_reg.py
+	$(TOOLS_DIR)/lzma e $(OPTEE_DIR)/out/arm-plat-airoha/core/tee-pager_v2.bin  $(UNOPEN_IMG_PATH)/bl32_optee.lzma
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 AARCH32_INSTRUCTION_SET=A32\
+		 BL1=$(UNOPEN_IMG_PATH)/atf/bl1.bin\
+		 BL2=$(UNOPEN_IMG_PATH)/atf/bl2.bin\
+		 BL31=$(UNOPEN_IMG_PATH)/atf/bl31.lzma\
+		 BL32=$(UNOPEN_IMG_PATH)/bl32_optee.lzma\
+		 BL33=$(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/u-boot.lzma fip  TCSUPPORT_OPTEE=1
+else
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 AARCH32_INSTRUCTION_SET=A32 BL1=$(UNOPEN_IMG_PATH)/atf/bl1.bin BL2=$(UNOPEN_IMG_PATH)/atf/bl2.bin BL31=$(UNOPEN_IMG_PATH)/atf/bl31.lzma BL33=$(UBOOT_DIR)/$(TCSUPPORT_UBOOT_VERSION)/u-boot.lzma fip
+endif	
+	cp $(ATF_DIR)/arm-trusted-firmware-2.3/tools/cert_create/cert_create $(TOOLS_UBOOT_DIR)
+	cp $(ATF_DIR)/arm-trusted-firmware-2.3/tools/fiptool/fiptool $(TOOLS_UBOOT_DIR)
+	cp $(ATF_DIR)/arm-trusted-firmware-2.3/tools/encrypt_fw/encrypt_fw $(TOOLS_UBOOT_DIR)
+ifneq ($(TCSUPPORT_ARM_SECURE_BOOT),)
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 AARCH32_INSTRUCTION_SET=A32 secure_script
+endif
+
+bootbase_clean: uboot_clean distclean
+
+secure_tclinux:
+ifneq ($(TCSUPPORT_ARM_SECURE_BOOT),)
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 tclinux.fip
+else
+	@echo do nothing
+endif
+
+secure_linux:
+ifneq ($(TCSUPPORT_ARM_SECURE_BOOT),)
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 linux.fip
+else
+	@echo do nothing
+endif
+
+secure_rootfs:
+ifneq ($(TCSUPPORT_ARM_SECURE_BOOT),)
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 rootfs.fip
+else
+	@echo do nothing
+endif
+
+delete_code:
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 ecnt_backup
+	for i in $(DELETE_SUBDIRS); do	\
+		(cd $$i && rm -f `find ./ | grep "\.h"`);	\
+		(cd $$i && rm -f `find ./ | grep "\.c"`);	\
+		(cd $$i && rm -f `find ./ | grep "\.S"`);	\
+	done
+	$(ATF_MAKE) -C $(ATF_DIR)/arm-trusted-firmware-2.3 PLAT=$(TCSOCNAME) ARCH=aarch32 ecnt_restore

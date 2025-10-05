@@ -1,0 +1,1 @@
+obj-y += ecnt_bootargs.o
